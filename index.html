@@ -30,6 +30,7 @@ h1 { color:#ff3333; margin-top:0; }
     font-family: Courier New, monospace;
     display: none;
     z-index: 9999;
+    pointer-events: none;
 }
 #debugPanel input {
     width: 70px;
@@ -173,17 +174,20 @@ canvas.addEventListener('contextmenu', e => e.preventDefault());
 document.addEventListener("keydown", e => {
     keys[e.key.toLowerCase()] = true;
 
-    if (keys["a"] && keys["b"] && keys["c"]) {
-        const panel = document.getElementById("debugPanel");
-        const show = panel.style.display === "none";
-        panel.style.display = show ? "block" : "none";
+   if (keys["a"] && keys["b"] && keys["c"]) {
+    const panel = document.getElementById("debugPanel");
+    const show = panel.style.display === "none";
 
-        if (show) {
-            document.getElementById("dbgBullets").value = bulletCount;
-            document.getElementById("dbgReload").value = shootCooldown;
-            document.getElementById("dbgRound").value = round;
-        }
+    panel.style.display = show ? "block" : "none";
+    panel.style.pointerEvents = show ? "auto" : "none";  // <-- FIX
+
+    if (show) {
+        document.getElementById("dbgBullets").value = bulletCount;
+        document.getElementById("dbgReload").value = shootCooldown;
+        document.getElementById("dbgRound").value = round;
     }
+}
+
 });
 
 document.addEventListener("keyup", e => {
