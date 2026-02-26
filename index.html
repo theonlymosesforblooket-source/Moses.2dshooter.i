@@ -247,7 +247,7 @@ function shoot() {
     let baseAngle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
     
     const speed = 20; 
-    const spread = 0.12 + (bulletCount * 0.01);
+    const spread = 0.1 + (bulletCount * 0.01);
     
     for(let i = 0; i < bulletCount; i++) {
         let angle = baseAngle + (i - (bulletCount - 1) / 2) * spread;
