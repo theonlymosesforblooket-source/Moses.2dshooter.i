@@ -152,10 +152,6 @@ let keys = {};
 window.addEventListener('keydown', e => {
     keys[e.key.toLowerCase()] = true;
 
-    if(e.key === 'Backspace') {
-        e.preventDefault();
-        showUpgradeMenu();
-    }
 
     if(e.code === 'Space') e.preventDefault();
 });
@@ -447,6 +443,21 @@ function draw() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 spawnRound();
+document.getElementById('upgrade-bullets').addEventListener('click', () => {
+    if (isPermanentMenu) {
+        applyPermanentUpgrade('bullets');
+    } else {
+        applyUpgrade('bullets');
+    }
+});
+
+document.getElementById('upgrade-speed').addEventListener('click', () => {
+    if (isPermanentMenu) {
+        applyPermanentUpgrade('speed');
+    } else {
+        applyUpgrade('speed');
+    }
+});
 
 function gameLoop() {
     update();
