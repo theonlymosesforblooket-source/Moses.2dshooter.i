@@ -260,12 +260,6 @@ function shoot() {
         let angle = baseAngle + ((i - half) / half) * (spread / 2);
         if (bulletCount === 1) angle = baseAngle;
 
-      
-        });
-    }
-}
-;
-
         bullets.push({
             x: player.x,
             y: player.y,
@@ -275,6 +269,7 @@ function shoot() {
         });
     }
 }
+
 
 function spawnRound() {
     enemies = [];
