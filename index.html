@@ -241,16 +241,30 @@ function applyZombiePermanentUpgrade() {
 
 function shoot() {
     const now = Date.now();
-    if(now - lastShotTime < shootCooldown) return;
+    if (now - lastShotTime < shootCooldown) return;
     lastShotTime = now;
-    
+
     let baseAngle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
-    
-    const speed = 20; 
-    const spread = 0.1 + (bulletCount * 0.01);
-    
-    for(let i = 0; i < bulletCount; i++) {
-        let angle = baseAngle + (i - (bulletCount - 1) / 2) * spread;
+    const speed = 20;
+
+    // --- NEW SPREAD FORMULA ---
+    const maxSpread = Math.PI * 2;      // full circle at 100 bullets
+    const curveCenter = 40;             // starts widening after 40 bullets
+    const curveStrength = 0.08;         // steepness of curve
+    const spread = maxSpread / (1 + Math.exp(-(bulletCount - curveCenter) * curveStrength));
+    // ---------------------------
+
+    const half = (bulletCount - 1) / 2;
+
+    for (let i = 0; i < bulletCount; i++) {
+        let angle = baseAngle + ((i - half) / half) * (spread / 2);
+        if (bulletCount === 1) angle = baseAngle;
+
+      
+        });
+    }
+}
+;
 
         bullets.push({
             x: player.x,
