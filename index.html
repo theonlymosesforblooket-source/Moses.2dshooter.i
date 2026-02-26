@@ -5,12 +5,6 @@
 <title>Zombie Arena: Infinite Scaling</title>
 <style>
 body, html { margin:0; padding:0; overflow:hidden; background:#111; font-family: Courier New, monospace; }
-    <div id="debugPanel">
-    <label>Bullets: <input id="dbgBullets" type="number"></label><br>
-    <label>Reload (ms): <input id="dbgReload" type="number"></label><br>
-    <label>Round: <input id="dbgRound" type="number"></label><br>
-    <button id="dbgApply">Apply</button>
-</div>
 canvas { display:block; cursor: crosshair; width:100vw; height:100vh; }
 #ui-overlay {
     position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
@@ -23,6 +17,8 @@ canvas { display:block; cursor: crosshair; width:100vw; height:100vh; }
 }
 .btn:hover { background:#0088ff; transform:scale(1.05); }
 h1 { color:#ff3333; margin-top:0; }
+
+/* ---------- DEBUG PANEL CSS ---------- */
 #debugPanel {
     position: fixed;
     top: 20px;
@@ -51,10 +47,17 @@ h1 { color:#ff3333; margin-top:0; }
 #debugPanel button:hover {
     background: #33ddff;
 }
-
 </style>
 </head>
 <body>
+
+<!-- ---------- DEBUG PANEL HTML ---------- -->
+<div id="debugPanel">
+    <label>Bullets: <input id="dbgBullets" type="number"></label><br>
+    <label>Reload (ms): <input id="dbgReload" type="number"></label><br>
+    <label>Round: <input id="dbgRound" type="number"></label><br>
+    <button id="dbgApply">Apply</button>
+</div>
 
 <div id="ui-overlay">
 <h1 id="menu-title">UPGRADE MENU</h1>
@@ -147,14 +150,15 @@ let keys = {};
 
 window.addEventListener('keydown', e => {
     keys[e.key.toLowerCase()] = true;
-    
+
     if(e.key === 'Backspace') {
         e.preventDefault();
         showUpgradeMenu();
     }
-    
+
     if(e.code === 'Space') e.preventDefault();
 });
+
 window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
 canvas.addEventListener('mousemove', e => {
@@ -165,24 +169,35 @@ canvas.addEventListener('mousemove', e => {
 
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-function showUpgradeMenu() {
-    gameActive = false;
-    isPermanentMenu = false;
-    document.getElementById('menu-title').innerText = 'UPGRADE MENU';
-    document.getElementById('menu-text').innerText = 'SELECT UPGRADE:';
-    ui.style.display = 'block';
-}
+/* ---------- DEBUG PANEL (A + B + C combo) ---------- */
+document.addEventListener("keydown", e => {
+    keys[e.key.toLowerCase()] = true;
 
-document.getElementById('upgrade-bullets').addEventListener('click', () => {
-    if(isPermanentMenu) applyPermanentUpgrade('bullets');
-    else applyUpgrade('bullets');
+    if (keys["a"] && keys["b"] && keys["c"]) {
+        const panel = document.getElementById("debugPanel");
+        const show = panel.style.display === "none";
+        panel.style.display = show ? "block" : "none";
+
+        if (show) {
+            document.getElementById("dbgBullets").value = bulletCount;
+            document.getElementById("dbgReload").value = shootCooldown;
+            document.getElementById("dbgRound").value = round;
+        }
+    }
 });
 
-document.getElementById('upgrade-speed').addEventListener('click', () => {
-    if(isPermanentMenu) applyPermanentUpgrade('speed');
-    else applyUpgrade('speed');
+document.addEventListener("keyup", e => {
+    keys[e.key.toLowerCase()] = false;
 });
 
+document.getElementById("dbgApply").onclick = () => {
+    bulletCount = Number(document.getElementById("dbgBullets").value);
+    shootCooldown = Number(document.getElementById("dbgReload").value);
+    round = Number(document.getElementById("dbgRound").value);
+
+    enemies = [];
+    spawnRound();
+};
 function resetGame() {
     bulletCount = DEFAULTS.bulletCount + permBulletBonus;
     shootCooldown = DEFAULTS.shootCooldown * permReloadBonus;
@@ -231,13 +246,12 @@ function shoot() {
     
     let baseAngle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
     
-    // MODIFIED: Higher speed for instant fire, and spread that shrinks as bulletCount grows
     const speed = 20; 
     const spread = 0.2 / bulletCount; 
     
     for(let i = 0; i < bulletCount; i++) {
-        // This math centers the cluster on your mouse and uses the new tight spread
         let angle = baseAngle + (i - (bulletCount - 1) / 2) * spread;
+
         bullets.push({
             x: player.x,
             y: player.y,
@@ -247,6 +261,7 @@ function shoot() {
         });
     }
 }
+
 function spawnRound() {
     enemies = [];
     let count = 5 + round;
@@ -288,66 +303,25 @@ function update() {
     
     if(vx || vy) player.angle = Math.atan2(vy, vx);
     if(keys[' ']) shoot();
-    // ---------- DEBUG PANEL (A + B + C combo) ----------
-document.addEventListener("keydown", e => {
-    keys[e.key.toLowerCase()] = true;
-
-    // Open/close panel ONLY when A + B + C are all held
-    if (keys["a"] && keys["b"] && keys["c"]) {
-        const panel = document.getElementById("debugPanel");
-        const show = panel.style.display === "none";
-
-        panel.style.display = show ? "block" : "none";
-
-        if (show) {
-            // Load current values
-            document.getElementById("dbgBullets").value = bulletCount;
-            document.getElementById("dbgReload").value = shootCooldown;
-            document.getElementById("dbgRound").value = round;
-        }
-    }
-});
-
-document.addEventListener("keyup", e => {
-    keys[e.key.toLowerCase()] = false;
-});
-
-// Apply button
-document.getElementById("dbgApply").onclick = () => {
-    bulletCount = Number(document.getElementById("dbgBullets").value);
-    shootCooldown = Number(document.getElementById("dbgReload").value);
-    round = Number(document.getElementById("dbgRound").value);
-
-    // Respawn enemies for new round
-    enemies = [];
-    spawnRound();
-
-    console.log("DEBUG UPDATED:", { bulletCount, shootCooldown, round });
-};
-
+    
     wrapEntity(player);
     
-    // **FIXED BULLETS: Check wall collision before updating position**
     for(let i = bullets.length - 1; i >= 0; i--) {
         let b = bullets[i];
         
-        // **NEW: Check if bullet will hit wall on next frame**
         if(collidesWithWall(b.x + b.dx, b.y + b.dy, b.size)) {
             bullets.splice(i, 1);
             continue;
         }
         
-        // Move bullet
         b.x += b.dx;
         b.y += b.dy;
         
-        // Remove bullets that leave screen
         if(b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
             bullets.splice(i, 1);
             continue;
         }
         
-        // Check enemy collision
         for(let j = enemies.length - 1; j >= 0; j--) {
             let e = enemies[j];
             if(Math.hypot(b.x - e.x, b.y - e.y) < (e.size/2 + b.size)) {
