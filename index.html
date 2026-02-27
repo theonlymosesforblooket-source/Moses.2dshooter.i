@@ -286,7 +286,7 @@ function getEffectiveBulletCount() {
 }
 
 function getEffectiveShootCooldown() {
-    let base = playerClass ? playerClass.shootCooldown : 1500;
+    let base = playerClass ? playerClass.shootCooldown : 1000;
     const factor = Math.pow(0.9, TRAITS.agility);
     return Math.max(80, base * factor);
 }
