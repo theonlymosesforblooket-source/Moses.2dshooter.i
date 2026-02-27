@@ -2,69 +2,82 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Zombie Arena: Infinite Scaling</title>
+<title>Zombie Arena: Open World</title>
 <style>
-body, html { margin:0; padding:0; overflow:hidden; background:#111; font-family: Courier New, monospace; }
-canvas { display:block; cursor: crosshair; width:100vw; height:100vh; }
+body, html {
+    margin:0;
+    padding:0;
+    overflow:hidden;
+    background:#111;
+    font-family: Courier New, monospace;
+}
+canvas {
+    display:block;
+    cursor: crosshair;
+    width:100vw;
+    height:100vh;
+}
 #ui-overlay {
-    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-    background:rgba(0,0,0,0.95); border:3px solid #0066CC; padding:40px;
-    text-align:center; color:white; display:none; z-index:10; box-shadow:0 0 20px #0066CC;
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    background:rgba(0,0,0,0.95);
+    border:3px solid #0066CC;
+    padding:40px;
+    text-align:center;
+    color:white;
+    display:none;
+    z-index:10;
+    box-shadow:0 0 20px #0066CC;
 }
 .btn {
-    background:#0066CC; color:white; border:none; padding:15px 30px;
-    margin:10px; cursor:pointer; font-size:18px; font-weight:bold; border-radius:5px;
+    background:#0066CC;
+    color:white;
+    border:none;
+    padding:15px 30px;
+    margin:10px;
+    cursor:pointer;
+    font-size:18px;
+    font-weight:bold;
+    border-radius:5px;
 }
-.btn:hover { background:#0088ff; transform:scale(1.05); }
-h1 { color:#ff3333; margin-top:0; }
-
-/* ---------- DEBUG PANEL CSS ---------- */
-#debugPanel {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    background: rgba(0,0,0,0.85);
-    padding: 12px;
-    border: 2px solid #00ccff;
-    color: white;
-    font-family: Courier New, monospace;
-    display: none;
-    z-index: 9999;
-    pointer-events: none;
+.btn:hover {
+    background:#0088ff;
+    transform:scale(1.05);
 }
-#debugPanel input {
-    width: 70px;
-    margin: 4px 0;
+h1 {
+    color:#ff3333;
+    margin-top:0;
 }
-#debugPanel button {
-    margin-top: 8px;
-    width: 100%;
-    padding: 6px;
-    background: #00ccff;
-    border: none;
-    cursor: pointer;
-    font-weight: bold;
+#trait-buttons, #class-buttons {
+    margin-top:20px;
 }
-#debugPanel button:hover {
-    background: #33ddff;
+#trait-buttons .btn, #class-buttons .btn {
+    display:block;
+    width:100%;
+    max-width:320px;
+    margin:8px auto;
 }
 </style>
 </head>
 <body>
 
-<!-- ---------- DEBUG PANEL HTML ---------- -->
-<div id="debugPanel">
-    <label>Bullets: <input id="dbgBullets" type="number"></label><br>
-    <label>Reload (ms): <input id="dbgReload" type="number"></label><br>
-    <label>Round: <input id="dbgRound" type="number"></label><br>
-    <button id="dbgApply">Apply</button>
-</div>
-
 <div id="ui-overlay">
-<h1 id="menu-title">UPGRADE MENU</h1>
-<p id="menu-text">SELECT UPGRADE:</p>
-<button class="btn" id="upgrade-bullets">+1 BULLET</button>
-<button class="btn" id="upgrade-speed">FASTER RELOAD</button>
+    <h1 id="menu-title">UPGRADE MENU</h1>
+    <p id="menu-text">SELECT UPGRADE:</p>
+    <div id="trait-buttons">
+        <button class="btn" data-trait="power">POWER (+BULLETS)</button>
+        <button class="btn" data-trait="agility">AGILITY (FASTER RELOAD)</button>
+        <button class="btn" data-trait="mobility">MOBILITY (MOVE SPEED)</button>
+        <button class="btn" data-trait="control">CONTROL (TIGHTER SPREAD)</button>
+        <button class="btn" data-trait="durability">DURABILITY (+HITS)</button>
+    </div>
+    <div id="class-buttons" style="display:none;">
+        <button class="btn" data-class="shotgun">SHOTGUNNER</button>
+        <button class="btn" data-class="sniper">SNIPER</button>
+        <button class="btn" data-class="machine">MACHINE GUNNER</button>
+    </div>
 </div>
 
 <canvas id="game"></canvas>
@@ -74,266 +87,338 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const ui = document.getElementById('ui-overlay');
 
-// ---------- DEFAULTS ----------
-const DEFAULTS = { bulletCount:1, shootCooldown:1500, round:1 };
+const WORLD_SIZE = 8000;
+const CENTER = { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2 };
+const MINIMAP_SIZE = 220;
+const MINIMAP_PADDING = 18;
 
-// ---------- PERMANENT UPGRADES ----------
-let permBulletBonus = 0;
-let permReloadBonus = 1;
-let permanentChosen = false;
-let zombieSpeedBonus = 0;
+let camX = 0, camY = 0;
 
-// ---------- GAME STATE ----------
-let gameActive = true;
-let round = DEFAULTS.round;
-let zombiesKilled = 0;
+let playerClass = null;
+const TRAITS = {
+    power: 0,
+    agility: 0,
+    mobility: 0,
+    control: 0,
+    durability: 0
+};
+
+const CLASSES = {
+    shotgun: {
+        name: "Shotgunner",
+        bulletCount: 6,
+        shootCooldown: 900,
+        speed: 8,
+        bulletSize: 4,
+        spread: 0.35,
+        maxHitsMod: 1
+    },
+    sniper: {
+        name: "Sniper",
+        bulletCount: 1,
+        shootCooldown: 2000,
+        speed: 9,
+        bulletSize: 7,
+        spread: 0.02,
+        maxHitsMod: -1
+    },
+    machine: {
+        name: "Machine Gunner",
+        bulletCount: 1,
+        shootCooldown: 200,
+        speed: 9,
+        bulletSize: 2,
+        spread: 0.12,
+        maxHitsMod: 0
+    }
+};
+
+let player = {
+    x: WORLD_SIZE / 2,
+    y: WORLD_SIZE / 2,
+    angle: 0,
+    baseSpeed: 10,
+    size: 10,
+    hits: 1,
+    maxHits: 1
+};
+
 let bullets = [];
 let enemies = [];
-let isPermanentMenu = false;
+let round = 1;
+let zombiesKilled = 0;
 let lastShotTime = 0;
+let lastHitTime = 0;
+const HIT_COOLDOWN = 500;
 
-const ZOMBIE_SPAWN = { x:80, y:80 };
-let player = { x:400, y:300, angle:0, speed:10, size:10 };
-let bulletCount = DEFAULTS.bulletCount;
-let shootCooldown = DEFAULTS.shootCooldown;
-
-// ---------- WALLS ----------
-const WALL_THICK = 25;
-const HOLE_WIDTH = 130;
-let walls = [];
+let gameActive = true;
+let isClassMenu = false;
+let zombieSpeedBonus = 0;
 
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     ctx.imageSmoothingEnabled = false;
-    createWalls();
-    player.x = canvas.width / 2;
-    player.y = canvas.height / 2;
+    camX = player.x - canvas.width / 2;
+    camY = player.y - canvas.height / 2;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function worldToScreen(wx, wy) {
+    return {
+        sx: Math.round(wx - camX),
+        sy: Math.round(wy - camY)
+    };
 }
 
-function createWalls(){
-    const w = canvas.width;
-    const h = canvas.height;
-    walls = [
-        { x:0, y:40, width:(w/2)-(HOLE_WIDTH/2), height:WALL_THICK },
-        { x:(w/2)+(HOLE_WIDTH/2), y:40, width:(w/2)-(HOLE_WIDTH/2), height:WALL_THICK },
-        { x:0, y:h-40-WALL_THICK, width:(w/2)-(HOLE_WIDTH/2), height:WALL_THICK },
-        { x:(w/2)+(HOLE_WIDTH/2), y:h-40-WALL_THICK, width:(w/2)-(HOLE_WIDTH/2), height:WALL_THICK },
-        { x:40, y:0, width:WALL_THICK, height:(h/2)-(HOLE_WIDTH/2) },
-        { x:40, y:(h/2)+(HOLE_WIDTH/2), width:WALL_THICK, height:(h/2)-(HOLE_WIDTH/2) },
-        { x:w-40-WALL_THICK, y:0, width:WALL_THICK, height:(h/2)-(HOLE_WIDTH/2) },
-        { x:w-40-WALL_THICK, y:(h/2)+(HOLE_WIDTH/2), width:WALL_THICK, height:(h/2)-(HOLE_WIDTH/2) }
-    ];
+function clampWorld() {
+    player.x = Math.max(0, Math.min(WORLD_SIZE, player.x));
+    player.y = Math.max(0, Math.min(WORLD_SIZE, player.y));
+    camX = Math.max(0, Math.min(WORLD_SIZE - canvas.width, player.x - canvas.width / 2));
+    camY = Math.max(0, Math.min(WORLD_SIZE - canvas.height, player.y - canvas.height / 2));
 }
-
-function collidesWithWall(x, y, size) {
-    for(let wall of walls) {
-        if(x-size < wall.x+wall.width+1 &&
-           x+size > wall.x-1 &&
-           y-size < wall.y+wall.height+1 &&
-           y+size > wall.y-1) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function wrapEntity(entity) {
-    if(entity.x < 0) entity.x = canvas.width;
-    if(entity.x > canvas.width) entity.x = 0;
-    if(entity.y < 0) entity.y = canvas.height;
-    if(entity.y > canvas.height) entity.y = 0;
-}
-
-// ---------- INPUT ----------
-let mouse = {x:0, y:0};
+let mouse = { x: 0, y: 0 };
 let keys = {};
 
 window.addEventListener('keydown', e => {
     keys[e.key.toLowerCase()] = true;
-
-
-    if(e.code === 'Space') e.preventDefault();
+    if (e.code === 'Space') e.preventDefault();
 });
-
-window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-
+window.addEventListener('keyup', e => {
+    keys[e.key.toLowerCase()] = false;
+});
 canvas.addEventListener('mousemove', e => {
     const rect = canvas.getBoundingClientRect();
     mouse.x = e.clientX - rect.left;
     mouse.y = e.clientY - rect.top;
 });
-
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-/* ---------- DEBUG PANEL (A + B + C combo) ---------- */
-document.addEventListener("keydown", e => {
-    keys[e.key.toLowerCase()] = true;
+function drawMinimap() {
+    const mapSize = MINIMAP_SIZE;
+    const scale = mapSize / WORLD_SIZE;
+    const x = MINIMAP_PADDING;
+    const y = canvas.height - mapSize - MINIMAP_PADDING;
 
-   if (keys["a"] && keys["b"] && keys["c"]) {
-    const panel = document.getElementById("debugPanel");
-    const show = panel.style.display === "none";
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = "#0b0b0b";
+    ctx.fillRect(x, y, mapSize, mapSize);
+    ctx.strokeStyle = "#00ccff";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, mapSize, mapSize);
 
-    panel.style.display = show ? "block" : "none";
-    panel.style.pointerEvents = show ? "auto" : "none";  // <-- FIX
+    const cx = x + CENTER.x * scale;
+    const cy = y + CENTER.y * scale;
+    ctx.fillStyle = "#333";
+    ctx.fillRect(cx - 2, cy - 2, 4, 4);
 
-    if (show) {
-        document.getElementById("dbgBullets").value = bulletCount;
-        document.getElementById("dbgReload").value = shootCooldown;
-        document.getElementById("dbgRound").value = round;
+    ctx.fillStyle = "rgba(255,60,60,0.9)";
+    for (let e of enemies) {
+        const ex = x + e.x * scale;
+        const ey = y + e.y * scale;
+        ctx.fillRect(ex, ey, 2, 2);
+    }
+
+    ctx.fillStyle = "lime";
+    const px = x + player.x * scale;
+    const py = y + player.y * scale;
+    ctx.fillRect(px - 3, py - 3, 6, 6);
+
+    ctx.restore();
+}
+
+function computeDangerLevel() {
+    const dist = Math.hypot(player.x - CENTER.x, player.y - CENTER.y);
+    const maxDist = WORLD_SIZE / 2;
+    let danger = 1 - (dist / maxDist);
+    if (danger < 0) danger = 0;
+    if (danger > 1) danger = 1;
+    return danger;
+}
+
+function applyTrait(trait) {
+    TRAITS[trait]++;
+
+    if (trait === 'durability') {
+        player.maxHits++;
+        player.hits = player.maxHits;
     }
 }
 
-});
+function getEffectiveBulletCount() {
+    let base = playerClass ? playerClass.bulletCount : 1;
+    base += TRAITS.power;
+    return Math.max(1, base);
+}
 
-document.addEventListener("keyup", e => {
-    keys[e.key.toLowerCase()] = false;
-});
+function getEffectiveShootCooldown() {
+    let base = playerClass ? playerClass.shootCooldown : 1500;
+    const factor = Math.pow(0.9, TRAITS.agility);
+    return Math.max(80, base * factor);
+}
 
-document.getElementById("dbgApply").onclick = () => {
-    bulletCount = Number(document.getElementById("dbgBullets").value);
-    shootCooldown = Number(document.getElementById("dbgReload").value);
-    round = Number(document.getElementById("dbgRound").value);
+function getEffectiveSpeed() {
+    let base = playerClass ? playerClass.speed : player.baseSpeed;
+    base += TRAITS.mobility * 0.6;
+    return base;
+}
 
-    enemies = [];
-    spawnRound();
-};
+function getEffectiveSpread() {
+    let base = playerClass ? playerClass.spread : 0.18;
+    const factor = Math.pow(0.9, TRAITS.control);
+    return base * factor;
+}
+
+function getEffectiveBulletSize() {
+    return playerClass ? playerClass.bulletSize : 3;
+}
 function resetGame() {
-    bulletCount = DEFAULTS.bulletCount + permBulletBonus;
-    shootCooldown = DEFAULTS.shootCooldown * permReloadBonus;
-    round = DEFAULTS.round;
-    zombiesKilled = 0;
     bullets = [];
     enemies = [];
-    player.x = canvas.width / 2;
-    player.y = canvas.height / 2;
+    round = 1;
+    zombiesKilled = 0;
+    playerClass = null;
+    TRAITS.power = 0;
+    TRAITS.agility = 0;
+    TRAITS.mobility = 0;
+    TRAITS.control = 0;
+    TRAITS.durability = 0;
+    player.maxHits = 1;
+    player.hits = 1;
+    player.x = WORLD_SIZE / 2;
+    player.y = WORLD_SIZE / 2;
     player.angle = 0;
-    ui.style.display = 'none';
-    isPermanentMenu = false;
+    zombieSpeedBonus = 0;
     gameActive = true;
+    isClassMenu = false;
+    ui.style.display = 'none';
     spawnRound();
 }
 
-function applyUpgrade(type) {
-    if(type === 'bullets') bulletCount++;
-    if(type === 'speed') shootCooldown = Math.max(0, shootCooldown * 0.8);
-    ui.style.display = 'none';
-    gameActive = true;
-    round++;
-    spawnRound();
+function spawnZombieAroundPlayer() {
+    const radius = 600 + Math.random() * 200;
+    const angle = Math.random() * Math.PI * 2;
+    const danger = computeDangerLevel();
+    const speed = 0.7 + (round * 0.05) + zombieSpeedBonus + danger * 0.3;
+
+    enemies.push({
+        x: player.x + Math.cos(angle) * radius,
+        y: player.y + Math.sin(angle) * radius,
+        size: 18,
+        speed: speed
+    });
 }
 
-function applyPermanentUpgrade(type) {
-    if(type === 'bullets') permBulletBonus++;
-    if(type === 'speed') permReloadBonus *= 0.85;
-    permanentChosen = true;
-    ui.style.display = 'none';
-    isPermanentMenu = false;
-    gameActive = true;
-    round++;
-    spawnRound();
+function spawnRound() {
+    enemies = [];
+    const danger = computeDangerLevel();
+    const baseCount = 6 + round * 1.5;
+    const extra = Math.floor(danger * 12);
+    const total = Math.floor(baseCount + extra);
+
+    for (let i = 0; i < total; i++) {
+        spawnZombieAroundPlayer();
+    }
 }
 
 function applyZombiePermanentUpgrade() {
     zombieSpeedBonus += 0.2;
-    console.log('ZOMBIE UPGRADE! Speed bonus now: ' + zombieSpeedBonus);
 }
 
+function openTraitMenu() {
+    isClassMenu = false;
+    document.getElementById('menu-title').innerText = `ROUND ${round} CLEAR`;
+    document.getElementById('menu-text').innerText = 'SELECT A TRAIT UPGRADE:';
+    document.getElementById('trait-buttons').style.display = 'block';
+    document.getElementById('class-buttons').style.display = 'none';
+    ui.style.display = 'block';
+    gameActive = false;
+}
+
+function openClassMenu() {
+    isClassMenu = true;
+    document.getElementById('menu-title').innerText = 'CHOOSE YOUR CLASS';
+    document.getElementById('menu-text').innerText = 'SELECT ONE (PERMANENT FOR THIS RUN):';
+    document.getElementById('trait-buttons').style.display = 'none';
+    document.getElementById('class-buttons').style.display = 'block';
+    ui.style.display = 'block';
+    gameActive = false;
+}
 function shoot() {
     const now = Date.now();
-    if (now - lastShotTime < shootCooldown) return;
+    const cooldown = getEffectiveShootCooldown();
+    if (now - lastShotTime < cooldown) return;
     lastShotTime = now;
 
-    let baseAngle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
-    const speed = 20;
+    const bulletCount = getEffectiveBulletCount();
+    const spread = getEffectiveSpread();
+    const bulletSize = getEffectiveBulletSize();
+    const speed = 22;
 
-    // --- NEW SPREAD FORMULA ---
-    const maxSpread = Math.PI * 2;      // full circle at 100 bullets
-    const curveCenter = 40;             // starts widening after 40 bullets
-    const curveStrength = 0.08;         // steepness of curve
-    const spread = maxSpread / (1 + Math.exp(-(bulletCount - curveCenter) * curveStrength));
-    // ---------------------------
+    const baseAngle = Math.atan2(
+        (mouse.y + camY) - player.y,
+        (mouse.x + camX) - player.x
+    );
 
     const half = (bulletCount - 1) / 2;
 
     for (let i = 0; i < bulletCount; i++) {
-        let angle = baseAngle + ((i - half) / half) * (spread / 2);
-        if (bulletCount === 1) angle = baseAngle;
+        let angle = baseAngle;
+        if (bulletCount > 1) {
+            angle = baseAngle + ((i - half) / half) * (spread / 2);
+        }
 
         bullets.push({
             x: player.x,
             y: player.y,
             dx: Math.cos(angle) * speed,
             dy: Math.sin(angle) * speed,
-            size: 3
+            size: bulletSize
         });
     }
 }
 
-
-function spawnRound() {
-    enemies = [];
-    let count = 5 + round;
-    let zSpeed = 0.7 + (round * 0.05) + zombieSpeedBonus;
-    
-    for(let i = 0; i < count; i++) {
-        let safeX, safeY;
-        let attempts = 0;
-        safeX = 80 + (Math.random() * 60);
-        safeY = 80 + (Math.random() * 60);
-        
-        while((collidesWithWall(safeX, safeY, 18) || safeX < 70 || safeX > 150 || safeY < 70 || safeY > 150) && attempts < 50) {
-            safeX = 80 + (Math.random() * 60);
-            safeY = 80 + (Math.random() * 60);
-            attempts++;
-        }
-        
-        enemies.push({
-            x: safeX,
-            y: safeY,
-            size: 18,
-            speed: zSpeed
-        });
-    }
-}
-
-// ---------- FIXED: BULLET UPDATE WITH WALL COLLISION ----------
 function update() {
-    if(!gameActive) return;
-    
+    if (!gameActive) return;
+
+    const now = Date.now();
+
     let vx = 0, vy = 0;
-    if(keys['w']) vy -= player.speed;
-    if(keys['s']) vy += player.speed;
-    if(keys['a']) vx -= player.speed;
-    if(keys['d']) vx += player.speed;
-    
-    if(!collidesWithWall(player.x + vx, player.y, player.size)) player.x += vx;
-    if(!collidesWithWall(player.x, player.y + vy, player.size)) player.y += vy;
-    
-    if(vx || vy) player.angle = Math.atan2(vy, vx);
-    if(keys[' ']) shoot();
-    
-    wrapEntity(player);
-    
-    for(let i = bullets.length - 1; i >= 0; i--) {
-        let b = bullets[i];
-        
-        if(collidesWithWall(b.x + b.dx, b.y + b.dy, b.size)) {
-            bullets.splice(i, 1);
-            continue;
-        }
-        
+    if (keys['w']) vy -= 1;
+    if (keys['s']) vy += 1;
+    if (keys['a']) vx -= 1;
+    if (keys['d']) vx += 1;
+
+    const mag = Math.hypot(vx, vy) || 1;
+    const speed = getEffectiveSpeed();
+    vx = (vx / mag) * speed;
+    vy = (vy / mag) * speed;
+
+    player.x += vx;
+    player.y += vy;
+    clampWorld();
+
+    if (vx || vy) {
+        player.angle = Math.atan2(vy, vx);
+    }
+
+    if (keys[' ']) shoot();
+
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
         b.x += b.dx;
         b.y += b.dy;
-        
-        if(b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+
+        if (b.x < 0 || b.x > WORLD_SIZE || b.y < 0 || b.y > WORLD_SIZE) {
             bullets.splice(i, 1);
             continue;
         }
-        
-        for(let j = enemies.length - 1; j >= 0; j--) {
-            let e = enemies[j];
-            if(Math.hypot(b.x - e.x, b.y - e.y) < (e.size/2 + b.size)) {
+
+        for (let j = enemies.length - 1; j >= 0; j--) {
+            const e = enemies[j];
+            if (Math.hypot(b.x - e.x, b.y - e.y) < (e.size / 2 + b.size)) {
                 enemies.splice(j, 1);
                 bullets.splice(i, 1);
                 zombiesKilled++;
@@ -341,131 +426,157 @@ function update() {
             }
         }
     }
-    
-    if(enemies.length === 0) {
-        if(round % 10 === 0 && round > 0) {
+    // zombie movement
+    for (let i = 0; i < enemies.length; i++) {
+        const e = enemies[i];
+        const dx = player.x - e.x;
+        const dy = player.y - e.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const mx = (dx / dist) * e.speed;
+        const my = (dy / dist) * e.speed;
+
+        e.x += mx;
+        e.y += my;
+    }
+
+    // zombie-zombie collision
+    for (let i = 0; i < enemies.length; i++) {
+        for (let j = i + 1; j < enemies.length; j++) {
+            const a = enemies[i];
+            const b = enemies[j];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const dist = Math.hypot(dx, dy);
+            const minDist = (a.size / 2) + (b.size / 2);
+
+            if (dist > 0 && dist < minDist) {
+                const overlap = minDist - dist;
+                const pushX = (dx / dist) * (overlap / 2);
+                const pushY = (dy / dist) * (overlap / 2);
+                a.x -= pushX;
+                a.y -= pushY;
+                b.x += pushX;
+                b.y += pushY;
+            }
+        }
+    }
+
+    // reflection-style hits
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        if (Math.hypot(player.x - e.x, player.y - e.y) < (e.size / 2 + player.size)) {
+            if (now - lastHitTime > HIT_COOLDOWN) {
+                enemies.splice(i, 1);
+                player.hits -= 1;
+                lastHitTime = now;
+                if (player.hits <= 0) {
+                    resetGame();
+                    return;
+                }
+            }
+        }
+    }
+
+    // round clear
+    if (enemies.length === 0) {
+        if (round % 5 === 0 && round > 0) {
             applyZombiePermanentUpgrade();
         }
-        
-        if(round === 10 && !permanentChosen) {
-            gameActive = false;
-            isPermanentMenu = true;
-            document.getElementById('menu-title').innerText = 'PERMANENT UPGRADE';
-            document.getElementById('menu-text').innerText = 'CHOOSE ONE (KEPT AFTER DEATH)';
-            ui.style.display = 'block';
+
+        if (round === 10 && !playerClass) {
+            openClassMenu();
             return;
         }
-        if(round % 3 === 0) {
-            gameActive = false;
-            isPermanentMenu = false;
-            document.getElementById('menu-title').innerText = `ROUND ${round} CLEAR`;
-            document.getElementById('menu-text').innerText = 'SELECT UPGRADE:';
-            ui.style.display = 'block';
+
+        if (round < 10) {
+            openTraitMenu();
         } else {
             round++;
             spawnRound();
         }
     }
-    
-    enemies.forEach(e => {
-        let dx = player.x - e.x;
-        let dy = player.y - e.y;
-        let dist = Math.hypot(dx, dy) || 1;
-        let mx = (dx / dist) * e.speed;
-        let my = (dy / dist) * e.speed;
-        
-        if(!collidesWithWall(e.x + mx, e.y, e.size/2)) e.x += mx;
-        if(!collidesWithWall(e.x, e.y + my, e.size/2)) e.y += my;
-        
-        wrapEntity(e);
-        
-        if(Math.hypot(player.x - e.x, player.y - e.y) < (e.size/2 + player.size)) {
-            resetGame();
-        }
-    });
+}
+function drawPlayer() {
+    const p = worldToScreen(player.x, player.y);
+    ctx.save();
+    ctx.translate(p.sx, p.sy);
+    ctx.rotate(player.angle);
+    ctx.fillStyle = "#00ccff";
+    ctx.beginPath();
+    ctx.moveTo(player.size, 0);
+    ctx.lineTo(-player.size, -player.size / 1.5);
+    ctx.lineTo(-player.size, player.size / 1.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // hits indicator
+    for (let i = 0; i < player.maxHits; i++) {
+        ctx.fillStyle = i < player.hits ? "lime" : "#550000";
+        ctx.fillRect(20 + i * 24, 20, 20, 20);
+    }
+}
+
+function drawEnemies() {
+    ctx.fillStyle = "#ff4444";
+    for (let e of enemies) {
+        const p = worldToScreen(e.x, e.y);
+        ctx.beginPath();
+        ctx.arc(p.sx, p.sy, e.size / 2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+function drawBullets() {
+    ctx.fillStyle = "#ffff66";
+    for (let b of bullets) {
+        const p = worldToScreen(b.x, b.y);
+        ctx.beginPath();
+        ctx.arc(p.sx, p.sy, b.size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+function drawWorldBounds() {
+    const tl = worldToScreen(0, 0);
+    const br = worldToScreen(WORLD_SIZE, WORLD_SIZE);
+    ctx.strokeStyle = "#333";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(tl.sx, tl.sy, br.sx - tl.sx, br.sy - tl.sy);
 }
 
 function draw() {
-    ctx.fillStyle = '#111';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    ctx.strokeStyle = '#222';
-    ctx.lineWidth = 1;
-    for(let i = 0; i < canvas.width; i += 50) {
-        ctx.beginPath();
-        ctx.moveTo(i, 0);
-        ctx.lineTo(i, canvas.height);
-        ctx.stroke();
-    }
-    for(let i = 0; i < canvas.height; i += 50) {
-        ctx.beginPath();
-        ctx.moveTo(0, i);
-        ctx.lineTo(canvas.width, i);
-        ctx.stroke();
-    }
-    
-    ctx.fillStyle = '#0066CC';
-    walls.forEach(w => ctx.fillRect(w.x, w.y, w.width, w.height));
-    
-    ctx.save();
-    ctx.translate(player.x, player.y);
-    ctx.rotate(player.angle);
-    ctx.fillStyle = 'cyan';
-    ctx.fillRect(-player.size, -player.size, player.size * 2, player.size * 2);
-    ctx.restore();
-    
-    const charge = Math.min((Date.now() - lastShotTime) / shootCooldown, 1);
-    ctx.fillStyle = '#333';
-    ctx.fillRect(player.x - 20, player.y + 18, 40, 4);
-    ctx.fillStyle = charge === 1 ? '#00ff00' : '#ffaa00';
-    ctx.fillRect(player.x - 20, player.y + 18, 40 * charge, 4);
-    
-    enemies.forEach(e => {
-        ctx.fillStyle = '#0f0';
-        ctx.beginPath();
-        ctx.arc(e.x, e.y, e.size/2, 0, Math.PI * 2);
-        ctx.fill();
-        
-        ctx.fillStyle = 'red';
-        ctx.beginPath();
-        ctx.arc(e.x - 4, e.y - 2, 2, 0, Math.PI * 2);
-        ctx.arc(e.x + 4, e.y - 2, 2, 0, Math.PI * 2);
-        ctx.fill();
-    });
-    
-    ctx.fillStyle = '#ffff00';
-    bullets.forEach(b => {
-        ctx.fillRect(b.x - b.size, b.y - b.size, b.size * 2, b.size * 2);
-    });
-    
-    ctx.fillStyle = 'white';
-    ctx.font = 'bold 14px Courier New, monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(`ROUND: ${round}`, 20, 30);
-    ctx.fillText(`KILLS: ${zombiesKilled}`, 20, 50);
-    ctx.fillText(`BULLETS: ${bulletCount}`, 20, 70);
-    ctx.fillText(`RELOAD: ${(shootCooldown/1000).toFixed(2)}s`, 20, 90);
-    ctx.fillText(`ENEMIES: ${enemies.length}`, 20, 110);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawWorldBounds();
+    drawBullets();
+    drawEnemies();
+    drawPlayer();
+    drawMinimap();
 }
 
-// ---------- INIT ----------
-window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
-spawnRound();
-document.getElementById('upgrade-bullets').addEventListener('click', () => {
-    if (isPermanentMenu) {
-        applyPermanentUpgrade('bullets');
-    } else {
-        applyUpgrade('bullets');
-    }
+document.getElementById('trait-buttons').addEventListener('click', e => {
+    if (!e.target.classList.contains('btn')) return;
+    const trait = e.target.getAttribute('data-trait');
+    applyTrait(trait);
+    ui.style.display = 'none';
+    gameActive = true;
+    round++;
+    spawnRound();
 });
 
-document.getElementById('upgrade-speed').addEventListener('click', () => {
-    if (isPermanentMenu) {
-        applyPermanentUpgrade('speed');
-    } else {
-        applyUpgrade('speed');
-    }
+document.getElementById('class-buttons').addEventListener('click', e => {
+    if (!e.target.classList.contains('btn')) return;
+    const cls = e.target.getAttribute('data-class');
+    playerClass = CLASSES[cls];
+
+    player.maxHits = 1 + TRAITS.durability + (playerClass.maxHitsMod || 0);
+    if (player.maxHits < 1) player.maxHits = 1;
+    player.hits = player.maxHits;
+
+    ui.style.display = 'none';
+    gameActive = true;
+    round++;
+    spawnRound();
 });
 
 function gameLoop() {
@@ -473,6 +584,8 @@ function gameLoop() {
     draw();
     requestAnimationFrame(gameLoop);
 }
+
+resetGame();
 gameLoop();
 </script>
 </body>
