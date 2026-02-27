@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Zombie Arena</title>
+<title>Zombie Arena Open World</title>
 <style>
 body, html {
     margin:0;
@@ -31,12 +31,16 @@ canvas {
     z-index:10;
     box-shadow:0 0 20px #0066CC;
 }
+h1 {
+    color:#ff3333;
+    margin-top:0;
+}
 .btn {
     background:#0066CC;
     color:white;
     border:none;
-    padding:15px 30px;
-    margin:10px;
+    padding:14px 26px;
+    margin:8px;
     cursor:pointer;
     font-size:18px;
     font-weight:bold;
@@ -46,25 +50,30 @@ canvas {
     background:#0088ff;
     transform:scale(1.05);
 }
-h1 {
-    color:#ff3333;
-    margin-top:0;
-}
 #trait-buttons, #class-buttons {
-    margin-top:20px;
+    margin-top:18px;
 }
 #trait-buttons .btn, #class-buttons .btn {
     display:block;
     width:100%;
     max-width:320px;
-    margin:8px auto;
+    margin:6px auto;
+}
+#hud {
+    position:absolute;
+    top:10px;
+    left:10px;
+    color:#eee;
+    font-size:14px;
+    text-shadow:0 0 4px #000;
+    z-index:5;
 }
 </style>
 </head>
 <body>
 
 <div id="ui-overlay">
-    <h1 id="menu-title">UPGRADE MENU</h1>
+    <h1 id="menu-title">UPGRADE</h1>
     <p id="menu-text">SELECT UPGRADE:</p>
     <div id="trait-buttons">
         <button class="btn" data-trait="power">POWER (+BULLETS)</button>
@@ -80,12 +89,15 @@ h1 {
     </div>
 </div>
 
+<div id="hud"></div>
+
 <canvas id="game"></canvas>
 
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const ui = document.getElementById('ui-overlay');
+const hud = document.getElementById('hud');
 
 const WORLD_SIZE = 8000;
 const CENTER = { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2 };
@@ -93,14 +105,15 @@ const MINIMAP_SIZE = 220;
 const MINIMAP_PADDING = 18;
 
 let camX = 0, camY = 0;
-
+// ---------- PLAYER / TRAITS / CLASSES ----------
 let playerClass = null;
+
 const TRAITS = {
-    power: 0,
-    agility: 0,
-    mobility: 0,
-    control: 0,
-    durability: 0
+    power: 0,      // +bullets
+    agility: 0,    // faster reload
+    mobility: 0,   // move speed
+    control: 0,    // tighter spread
+    durability: 0  // +max hits
 };
 
 const CLASSES = {
@@ -143,28 +156,38 @@ let player = {
     maxHits: 1
 };
 
+// ---------- LEVELING SYSTEM B ----------
+let xp = 0;
+let level = 1;
+let xpToNext = 5; // Leveling System B start (5 → 7 → 10 → 14 → ... no limit)
+
+// ---------- GAME STATE ----------
 let bullets = [];
 let enemies = [];
-let round = 1;
 let zombiesKilled = 0;
+
 let lastShotTime = 0;
 let lastHitTime = 0;
 const HIT_COOLDOWN = 500;
 
 let gameActive = true;
 let isClassMenu = false;
-let zombieSpeedBonus = 0;
 
+let zombieSpeedBonus = 0; // increases every level after 10
+
+// ---------- CAMERA + RESIZE ----------
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     ctx.imageSmoothingEnabled = false;
+
     camX = player.x - canvas.width / 2;
     camY = player.y - canvas.height / 2;
 }
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
+// ---------- COORD HELPERS ----------
 function worldToScreen(wx, wy) {
     return {
         sx: Math.round(wx - camX),
@@ -175,9 +198,11 @@ function worldToScreen(wx, wy) {
 function clampWorld() {
     player.x = Math.max(0, Math.min(WORLD_SIZE, player.x));
     player.y = Math.max(0, Math.min(WORLD_SIZE, player.y));
+
     camX = Math.max(0, Math.min(WORLD_SIZE - canvas.width, player.x - canvas.width / 2));
     camY = Math.max(0, Math.min(WORLD_SIZE - canvas.height, player.y - canvas.height / 2));
 }
+// ---------- INPUT ----------
 let mouse = { x: 0, y: 0 };
 let keys = {};
 
@@ -195,6 +220,7 @@ canvas.addEventListener('mousemove', e => {
 });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
+// ---------- MINIMAP ----------
 function drawMinimap() {
     const mapSize = MINIMAP_SIZE;
     const scale = mapSize / WORLD_SIZE;
@@ -209,11 +235,13 @@ function drawMinimap() {
     ctx.lineWidth = 2;
     ctx.strokeRect(x, y, mapSize, mapSize);
 
+    // center marker
     const cx = x + CENTER.x * scale;
     const cy = y + CENTER.y * scale;
     ctx.fillStyle = "#333";
     ctx.fillRect(cx - 2, cy - 2, 4, 4);
 
+    // enemies
     ctx.fillStyle = "rgba(255,60,60,0.9)";
     for (let e of enemies) {
         const ex = x + e.x * scale;
@@ -221,6 +249,7 @@ function drawMinimap() {
         ctx.fillRect(ex, ey, 2, 2);
     }
 
+    // player
     ctx.fillStyle = "lime";
     const px = x + player.x * scale;
     const py = y + player.y * scale;
@@ -229,6 +258,7 @@ function drawMinimap() {
     ctx.restore();
 }
 
+// ---------- DANGER LEVEL (CENTER HEAT) ----------
 function computeDangerLevel() {
     const dist = Math.hypot(player.x - CENTER.x, player.y - CENTER.y);
     const maxDist = WORLD_SIZE / 2;
@@ -238,6 +268,7 @@ function computeDangerLevel() {
     return danger;
 }
 
+// ---------- TRAITS ----------
 function applyTrait(trait) {
     TRAITS[trait]++;
 
@@ -247,6 +278,7 @@ function applyTrait(trait) {
     }
 }
 
+// ---------- EFFECTIVE STATS ----------
 function getEffectiveBulletCount() {
     let base = playerClass ? playerClass.bulletCount : 1;
     base += TRAITS.power;
@@ -254,7 +286,7 @@ function getEffectiveBulletCount() {
 }
 
 function getEffectiveShootCooldown() {
-    let base = playerClass ? playerClass.shootCooldown : 1000;
+    let base = playerClass ? playerClass.shootCooldown : 1500;
     const factor = Math.pow(0.9, TRAITS.agility);
     return Math.max(80, base * factor);
 }
@@ -274,62 +306,66 @@ function getEffectiveSpread() {
 function getEffectiveBulletSize() {
     return playerClass ? playerClass.bulletSize : 3;
 }
-function resetGame() {
-    bullets = [];
-    enemies = [];
-    round = 1;
-    zombiesKilled = 0;
-    playerClass = null;
-    TRAITS.power = 0;
-    TRAITS.agility = 0;
-    TRAITS.mobility = 0;
-    TRAITS.control = 0;
-    TRAITS.durability = 0;
-    player.maxHits = 1;
-    player.hits = 1;
-    player.x = WORLD_SIZE / 2;
-    player.y = WORLD_SIZE / 2;
-    player.angle = 0;
-    zombieSpeedBonus = 0;
-    gameActive = true;
-    isClassMenu = false;
-    ui.style.display = 'none';
-    spawnRound();
-}
+// ---------- LEVELING (INFINITE, SYSTEM B) ----------
+function addXP(amount) {
+    xp += amount;
 
-function spawnZombieAroundPlayer() {
-    const radius = 600 + Math.random() * 200;
-    const angle = Math.random() * Math.PI * 2;
-    const danger = computeDangerLevel();
-    const speed = 0.7 + (round * 0.05) + zombieSpeedBonus + danger * 0.3;
+    while (xp >= xpToNext) {
+        xp -= xpToNext;
+        level++;
 
-    enemies.push({
-        x: player.x + Math.cos(angle) * radius,
-        y: player.y + Math.sin(angle) * radius,
-        size: 18,
-        speed: speed
-    });
-}
+        // Leveling System B scaling (5 → 7 → 10 → 14 → ...)
+        xpToNext = Math.floor(xpToNext * 1.35);
 
-function spawnRound() {
-    enemies = [];
-    const danger = computeDangerLevel();
-    const baseCount = 6 + round * 1.5;
-    const extra = Math.floor(danger * 12);
-    const total = Math.floor(baseCount + extra);
+        // after level 10, zombies get stronger every level
+        if (level > 10) {
+            zombieSpeedBonus += 0.05;
+        }
 
-    for (let i = 0; i < total; i++) {
-        spawnZombieAroundPlayer();
+        if (level === 10 && !playerClass) {
+            openClassMenu();
+            return;
+        }
+
+        if (level < 10) {
+            openTraitMenu();
+            return;
+        }
     }
 }
 
-function applyZombiePermanentUpgrade() {
-    zombieSpeedBonus += 0.2;
+// ---------- SPAWNING ----------
+let spawnTimer = 0;
+let spawnInterval = 1200; // ms
+const SPAWN_MIN_DIST = 500;  // zombies won't spawn too close
+const SPAWN_MAX_DIST = 900;  // zombies spawn within this range
+
+function spawnZombieAroundPlayer() {
+    let angle = Math.random() * Math.PI * 2;
+    let dist = SPAWN_MIN_DIST + Math.random() * (SPAWN_MAX_DIST - SPAWN_MIN_DIST);
+
+    let x = player.x + Math.cos(angle) * dist;
+    let y = player.y + Math.sin(angle) * dist;
+
+    // clamp to world
+    x = Math.max(0, Math.min(WORLD_SIZE, x));
+    y = Math.max(0, Math.min(WORLD_SIZE, y));
+
+    const danger = computeDangerLevel();
+    const speed = 0.7 + (level * 0.05) + zombieSpeedBonus + danger * 0.3;
+
+    enemies.push({
+        x,
+        y,
+        size: 18,
+        speed
+    });
 }
 
+// ---------- MENUS ----------
 function openTraitMenu() {
     isClassMenu = false;
-    document.getElementById('menu-title').innerText = `ROUND ${round} CLEAR`;
+    document.getElementById('menu-title').innerText = `LEVEL ${level}`;
     document.getElementById('menu-text').innerText = 'SELECT A TRAIT UPGRADE:';
     document.getElementById('trait-buttons').style.display = 'block';
     document.getElementById('class-buttons').style.display = 'none';
@@ -340,12 +376,13 @@ function openTraitMenu() {
 function openClassMenu() {
     isClassMenu = true;
     document.getElementById('menu-title').innerText = 'CHOOSE YOUR CLASS';
-    document.getElementById('menu-text').innerText = 'SELECT ONE (PERMANENT FOR THIS RUN):';
+    document.getElementById('menu-text').innerText = 'SELECT ONE (PERMANENT THIS RUN):';
     document.getElementById('trait-buttons').style.display = 'none';
     document.getElementById('class-buttons').style.display = 'block';
     ui.style.display = 'block';
     gameActive = false;
 }
+// ---------- SHOOTING ----------
 function shoot() {
     const now = Date.now();
     const cooldown = getEffectiveShootCooldown();
@@ -357,9 +394,12 @@ function shoot() {
     const bulletSize = getEffectiveBulletSize();
     const speed = 22;
 
+    const worldMouseX = mouse.x + camX;
+    const worldMouseY = mouse.y + camY;
+
     const baseAngle = Math.atan2(
-        (mouse.y + camY) - player.y,
-        (mouse.x + camX) - player.x
+        worldMouseY - player.y,
+        worldMouseX - player.x
     );
 
     const half = (bulletCount - 1) / 2;
@@ -367,7 +407,7 @@ function shoot() {
     for (let i = 0; i < bulletCount; i++) {
         let angle = baseAngle;
         if (bulletCount > 1) {
-            angle = baseAngle + ((i - half) / half) * (spread / 2);
+            angle = baseAngle + ((i - half) / Math.max(half, 1)) * (spread / 2);
         }
 
         bullets.push({
@@ -380,11 +420,15 @@ function shoot() {
     }
 }
 
+// ---------- UPDATE LOOP CORE ----------
 function update() {
     if (!gameActive) return;
 
     const now = Date.now();
+    const deltaTime = now - (update.lastTime || now);
+    update.lastTime = now;
 
+    // movement
     let vx = 0, vy = 0;
     if (keys['w']) vy -= 1;
     if (keys['s']) vy += 1;
@@ -404,8 +448,19 @@ function update() {
         player.angle = Math.atan2(vy, vx);
     }
 
+    // shooting
     if (keys[' ']) shoot();
 
+    // continuous spawning
+    spawnTimer += deltaTime;
+    if (spawnTimer > spawnInterval) {
+        spawnZombieAroundPlayer();
+        spawnTimer = 0;
+        // faster spawn as level increases
+        spawnInterval = Math.max(300, 1200 - level * 20);
+    }
+
+    // bullets
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
         b.x += b.dx;
@@ -422,28 +477,32 @@ function update() {
                 enemies.splice(j, 1);
                 bullets.splice(i, 1);
                 zombiesKilled++;
+                addXP(1);
                 break;
             }
         }
     }
-    // zombie movement
+}
+// ---------- ZOMBIE MOVEMENT ----------
+function updateZombies() {
     for (let i = 0; i < enemies.length; i++) {
         const e = enemies[i];
         const dx = player.x - e.x;
         const dy = player.y - e.y;
         const dist = Math.hypot(dx, dy) || 1;
-        const mx = (dx / dist) * e.speed;
-        const my = (dy / dist) * e.speed;
 
-        e.x += mx;
-        e.y += my;
+        e.x += (dx / dist) * e.speed;
+        e.y += (dy / dist) * e.speed;
     }
+}
 
-    // zombie-zombie collision
+// ---------- ZOMBIE-ZOMBIE COLLISION ----------
+function pushZombiesApart() {
     for (let i = 0; i < enemies.length; i++) {
         for (let j = i + 1; j < enemies.length; j++) {
             const a = enemies[i];
             const b = enemies[j];
+
             const dx = b.x - a.x;
             const dy = b.y - a.y;
             const dist = Math.hypot(dx, dy);
@@ -453,6 +512,7 @@ function update() {
                 const overlap = minDist - dist;
                 const pushX = (dx / dist) * (overlap / 2);
                 const pushY = (dy / dist) * (overlap / 2);
+
                 a.x -= pushX;
                 a.y -= pushY;
                 b.x += pushX;
@@ -460,15 +520,22 @@ function update() {
             }
         }
     }
+}
 
-    // reflection-style hits
+// ---------- REFLECTION HIT SYSTEM ----------
+function checkPlayerHits() {
+    const now = Date.now();
+
     for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
-        if (Math.hypot(player.x - e.x, player.y - e.y) < (e.size / 2 + player.size)) {
+        const dist = Math.hypot(player.x - e.x, player.y - e.y);
+
+        if (dist < (e.size / 2 + player.size)) {
             if (now - lastHitTime > HIT_COOLDOWN) {
                 enemies.splice(i, 1);
-                player.hits -= 1;
+                player.hits--;
                 lastHitTime = now;
+
                 if (player.hits <= 0) {
                     resetGame();
                     return;
@@ -476,31 +543,16 @@ function update() {
             }
         }
     }
-
-    // round clear
-    if (enemies.length === 0) {
-        if (round % 5 === 0 && round > 0) {
-            applyZombiePermanentUpgrade();
-        }
-
-        if (round === 10 && !playerClass) {
-            openClassMenu();
-            return;
-        }
-
-        if (round < 10) {
-            openTraitMenu();
-        } else {
-            round++;
-            spawnRound();
-        }
-    }
 }
+
+// ---------- DRAW PLAYER ----------
 function drawPlayer() {
     const p = worldToScreen(player.x, player.y);
+
     ctx.save();
     ctx.translate(p.sx, p.sy);
     ctx.rotate(player.angle);
+
     ctx.fillStyle = "#00ccff";
     ctx.beginPath();
     ctx.moveTo(player.size, 0);
@@ -508,25 +560,17 @@ function drawPlayer() {
     ctx.lineTo(-player.size, player.size / 1.5);
     ctx.closePath();
     ctx.fill();
+
     ctx.restore();
 
-    // hits indicator
+    // hits
     for (let i = 0; i < player.maxHits; i++) {
         ctx.fillStyle = i < player.hits ? "lime" : "#550000";
         ctx.fillRect(20 + i * 24, 20, 20, 20);
     }
 }
 
-function drawEnemies() {
-    ctx.fillStyle = "#ff4444";
-    for (let e of enemies) {
-        const p = worldToScreen(e.x, e.y);
-        ctx.beginPath();
-        ctx.arc(p.sx, p.sy, e.size / 2, 0, Math.PI * 2);
-        ctx.fill();
-    }
-}
-
+// ---------- DRAW BULLETS ----------
 function drawBullets() {
     ctx.fillStyle = "#ffff66";
     for (let b of bullets) {
@@ -537,31 +581,76 @@ function drawBullets() {
     }
 }
 
+// ---------- DRAW ZOMBIES (GREEN WITH RED EYES) ----------
+function drawEnemies() {
+    for (let e of enemies) {
+        const p = worldToScreen(e.x, e.y);
+
+        // body
+        ctx.fillStyle = "#00cc00";
+        ctx.beginPath();
+        ctx.arc(p.sx, p.sy, e.size / 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // eyes
+        ctx.fillStyle = "#ff0000";
+        ctx.beginPath();
+        ctx.arc(p.sx - 4, p.sy - 3, 2, 0, Math.PI * 2);
+        ctx.arc(p.sx + 4, p.sy - 3, 2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+// ---------- WORLD BORDER ----------
 function drawWorldBounds() {
     const tl = worldToScreen(0, 0);
     const br = worldToScreen(WORLD_SIZE, WORLD_SIZE);
+
     ctx.strokeStyle = "#333";
     ctx.lineWidth = 4;
     ctx.strokeRect(tl.sx, tl.sy, br.sx - tl.sx, br.sy - tl.sy);
 }
 
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawWorldBounds();
-    drawBullets();
-    drawEnemies();
-    drawPlayer();
-    drawMinimap();
+// ---------- HUD ----------
+function updateHUD() {
+    hud.innerHTML =
+        `Level: ${level}<br>` +
+        `XP: ${xp} / ${xpToNext}<br>` +
+        `Kills: ${zombiesKilled}<br>` +
+        `Zombies: ${enemies.length}`;
 }
 
+// ---------- DEBUG PANEL (A + B + C) ----------
+let debugOpen = false;
+
+window.addEventListener("keydown", e => {
+    if (keys['a'] && keys['b'] && keys['c']) {
+        debugOpen = !debugOpen;
+    }
+});
+
+function drawDebug() {
+    if (!debugOpen) return;
+
+    ctx.fillStyle = "rgba(0,0,0,0.7)";
+    ctx.fillRect(20, 80, 260, 140);
+
+    ctx.fillStyle = "white";
+    ctx.font = "14px Courier New";
+    ctx.fillText(`DEBUG PANEL`, 30, 100);
+    ctx.fillText(`Player X: ${Math.floor(player.x)}`, 30, 120);
+    ctx.fillText(`Player Y: ${Math.floor(player.y)}`, 30, 140);
+    ctx.fillText(`Level: ${level}`, 30, 160);
+    ctx.fillText(`XP: ${xp}/${xpToNext}`, 30, 180);
+    ctx.fillText(`Zombies: ${enemies.length}`, 30, 200);
+}
+// ---------- UI HANDLERS ----------
 document.getElementById('trait-buttons').addEventListener('click', e => {
     if (!e.target.classList.contains('btn')) return;
     const trait = e.target.getAttribute('data-trait');
     applyTrait(trait);
     ui.style.display = 'none';
     gameActive = true;
-    round++;
-    spawnRound();
 });
 
 document.getElementById('class-buttons').addEventListener('click', e => {
@@ -575,16 +664,63 @@ document.getElementById('class-buttons').addEventListener('click', e => {
 
     ui.style.display = 'none';
     gameActive = true;
-    round++;
-    spawnRound();
 });
 
+// ---------- RESET ----------
+function resetGame() {
+    bullets = [];
+    enemies = [];
+    zombiesKilled = 0;
+
+    xp = 0;
+    level = 1;
+    xpToNext = 5;
+
+    playerClass = null;
+    TRAITS.power = 0;
+    TRAITS.agility = 0;
+    TRAITS.mobility = 0;
+    TRAITS.control = 0;
+    TRAITS.durability = 0;
+
+    player.x = WORLD_SIZE / 2;
+    player.y = WORLD_SIZE / 2;
+    player.angle = 0;
+    player.maxHits = 1;
+    player.hits = 1;
+
+    zombieSpeedBonus = 0;
+    spawnTimer = 0;
+    spawnInterval = 1200;
+
+    gameActive = true;
+    ui.style.display = 'none';
+}
+
+// ---------- DRAW ----------
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    drawWorldBounds();
+    drawBullets();
+    drawEnemies();
+    drawPlayer();
+    drawMinimap();
+    drawDebug();
+    updateHUD();
+}
+
+// ---------- MAIN LOOP ----------
 function gameLoop() {
     update();
+    updateZombies();
+    pushZombiesApart();
+    checkPlayerHits();
     draw();
     requestAnimationFrame(gameLoop);
 }
 
+// ---------- START ----------
 resetGame();
 gameLoop();
 </script>
